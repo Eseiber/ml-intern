@@ -681,15 +681,6 @@ class Handlers:
                 session.context_manager.add_message(
                     Message(role="user", content=doom_prompt)
                 )
-                await session.send_event(
-                    Event(
-                        event_type="tool_log",
-                        data={
-                            "tool": "system",
-                            "log": "Doom loop detected — injecting corrective prompt",
-                        },
-                    )
-                )
 
             malformed_tool = _detect_repeated_malformed(session.context_manager.items)
             if malformed_tool:
