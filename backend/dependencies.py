@@ -12,7 +12,9 @@ from typing import Any
 import httpx
 from fastapi import HTTPException, Request, status
 
-from agent.core.hf_access import fetch_whoami_v2, jobs_access_from_whoami
+from agent.core.hf_tokens import bearer_token_from_header
+
+from agent.core.hf_access import fetch_whoami_v2
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +108,24 @@ async def _fetch_user_plan(token: str) -> str:
 
     if not isinstance(whoami, dict):
         return "free"
-    return jobs_access_from_whoami(whoami).plan
+
+    # OAuth whoami sets `type: "user"` and surfaces Pro via the `isPro` boolean
+    # — see Space discussion #21. HF-Jobs eligibility (PR #172) ignores plan
+    # entirely; the Claude daily-cap tier is still a free vs pro/org split.
+    if whoami.get("isPro") is True or whoami.get("is_pro") is True:
+        return "pro"
+    plan_str = ""
+    for key in ("plan", "type", "accountType"):
+        value = whoami.get(key)
+        if isinstance(value, str) and value:
+            plan_str = value.lower()
+            break
+    if any(tag in plan_str for tag in ("pro", "enterprise", "team")):
+        return "pro"
+    orgs = whoami.get("orgs") or []
+    if isinstance(orgs, list) and orgs:
+        return "org"
+    return "free"
 
 
 async def _extract_user_from_token(token: str) -> dict[str, Any] | None:
@@ -157,9 +176,8 @@ async def get_current_user(request: Request) -> dict[str, Any]:
         return DEV_USER
 
     # Try Authorization header
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:]
+    token = bearer_token_from_header(request.headers.get("Authorization", ""))
+    if token:
         user = await _extract_user_from_token(token)
         if user:
             return user
@@ -183,9 +201,9 @@ def _extract_token(request: Request) -> str | None:
 
     Mirrors the lookup order used by ``get_current_user``.
     """
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        return auth_header[7:]
+    token = bearer_token_from_header(request.headers.get("Authorization", ""))
+    if token:
+        return token
     return request.cookies.get("hf_access_token")
 
 
@@ -202,4 +220,3 @@ async def require_huggingface_org_member(request: Request) -> bool:
     if not token:
         return False
     return await check_org_membership(token, HF_EMPLOYEE_ORG)
-
