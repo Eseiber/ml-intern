@@ -127,7 +127,7 @@ function AccountUsageSection({
         />
         <UsageRow label="LLM calls" value={formatCount(telemetry?.llm_calls)} />
         <UsageRow
-          label="Context tokens"
+          label="Input tokens"
           value={formatCount(contextTokenCount(telemetry))}
         />
         <UsageRow
